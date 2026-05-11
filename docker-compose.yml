@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  ecu-api:
+    build: .
+    container_name: ecu_diagnostics_api
+    command: python main.py --mode api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./database:/app/database
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  ecu-dashboard:
+    build: .
+    container_name: ecu_diagnostics_dashboard
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./logs:/app/logs
+      - ./database:/app/database
+    depends_on:
+      - ecu-api
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
