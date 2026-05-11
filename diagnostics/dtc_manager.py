@@ -20,31 +20,44 @@ DTC_DEFINITIONS = {
 
 
 class DTCManager:
-    def __init__(self, ecu, db: DatabaseManager):
+    def __init__(self, ecu=None, db: DatabaseManager = None):
         self._ecu = ecu
         self._db = db
         self._active_dtcs = {}
         self._lock = threading.Lock()
         self._running = False
         self._thread = None
+
         logger.info("DTCManager initialised.")
 
     def start(self):
         if self._running:
             return
+
         self._running = True
-        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+
+        self._thread = threading.Thread(
+            target=self._monitor_loop,
+            daemon=True
+        )
+
         self._thread.start()
+
         logger.info("DTC monitor thread started.")
 
     def stop(self):
         self._running = False
+
         if self._thread:
             self._thread.join(timeout=2)
 
     def _monitor_loop(self):
         while self._running:
-            self._evaluate(self._ecu.get_telemetry(), self._ecu.get_active_faults())
+            self._evaluate(
+                self._ecu.get_telemetry(),
+                self._ecu.get_active_faults()
+            )
+
             time.sleep(0.5)
 
     def _evaluate(self, tel: dict, faults: list):
@@ -67,6 +80,7 @@ class DTCManager:
             detected.append("P0101")
 
         now = time.time()
+
         with self._lock:
             for code in detected:
                 if code not in self._active_dtcs:
@@ -77,8 +91,18 @@ class DTCManager:
                         "first_seen": now,
                         "last_seen": now,
                     }
-                    self._db.insert_dtc(code, DTC_DEFINITIONS[code]["desc"], DTC_DEFINITIONS[code]["severity"])
-                    logger.warning(f"DTC SET: {code} - {DTC_DEFINITIONS[code]['desc']}")
+
+                    if self._db is not None:
+                        self._db.insert_dtc(
+                            code,
+                            DTC_DEFINITIONS[code]["desc"],
+                            DTC_DEFINITIONS[code]["severity"]
+                        )
+
+                    logger.warning(
+                        f"DTC SET: {code} - {DTC_DEFINITIONS[code]['desc']}"
+                    )
+
                 else:
                     self._active_dtcs[code]["last_seen"] = now
 
@@ -90,13 +114,16 @@ class DTCManager:
         with self._lock:
             count = len(self._active_dtcs)
             self._active_dtcs.clear()
+
             logger.info(f"Cleared {count} DTC(s).")
 
     def inject_dtc(self, code: str):
         if code not in DTC_DEFINITIONS:
             logger.error(f"Unknown DTC: {code}")
             return
+
         now = time.time()
+
         with self._lock:
             self._active_dtcs[code] = {
                 "code": code,
@@ -105,7 +132,14 @@ class DTCManager:
                 "first_seen": now,
                 "last_seen": now,
             }
-        self._db.insert_dtc(code, DTC_DEFINITIONS[code]["desc"], DTC_DEFINITIONS[code]["severity"])
+
+        if self._db is not None:
+            self._db.insert_dtc(
+                code,
+                DTC_DEFINITIONS[code]["desc"],
+                DTC_DEFINITIONS[code]["severity"]
+            )
+
         logger.warning(f"DTC manually injected: {code}")
 
     @staticmethod
