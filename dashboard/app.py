@@ -492,4 +492,4 @@ elif page == "Reports & Logs":
         if rows:
             st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-```
+
