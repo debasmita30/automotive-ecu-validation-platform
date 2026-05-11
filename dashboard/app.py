@@ -1,8 +1,12 @@
+
 import sys
 import os
 import time
 import subprocess
 import json
+import warnings
+
+warnings.filterwarnings("ignore")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -11,11 +15,13 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 
+from streamlit_autorefresh import st_autorefresh
+
 from ecu.simulator import ECUSimulator
 from ecu.telemetry import TelemetryCollector
 from can_bus.virtual_bus import VirtualCANBus, CANTransmitter
 from can_bus.monitor import CANMonitor
-from diagnostics.dtc_manager import DTCManager
+from diagnostics.dtc_manager import DTCManager, DTC_DEFINITIONS
 from diagnostics.uds_handler import UDSHandler, OBD2Handler
 from faults.fault_engine import FaultEngine, FAULT_CATALOGUE
 from database.db_manager import DatabaseManager
@@ -29,24 +35,113 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-[data-testid="stMetricValue"] { font-size: 1.6rem; font-weight: 700; }
-.fault-card { background: #1e1e2e; border-left: 4px solid #e74c3c; padding: 8px 12px; border-radius: 4px; margin: 4px 0; }
-.ok-card   { background: #1e1e2e; border-left: 4px solid #2ecc71; padding: 8px 12px; border-radius: 4px; margin: 4px 0; }
-.warn-card { background: #1e1e2e; border-left: 4px solid #f39c12; padding: 8px 12px; border-radius: 4px; margin: 4px 0; }
+
+html, body, [class*="css"] {
+    background-color: #0f172a;
+    color: white;
+}
+
+.main {
+    background: linear-gradient(180deg,#0f172a 0%,#111827 100%);
+}
+
+section[data-testid="stSidebar"] {
+    background: #111827;
+    border-right: 1px solid rgba(255,255,255,0.08);
+}
+
+[data-testid="stMetric"] {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 16px;
+    border-radius: 14px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 2rem;
+}
+
+.ecu-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px;
+    border-radius: 16px;
+    margin-bottom: 14px;
+}
+
+.health-good {
+    background: rgba(46,204,113,0.15);
+    border-left: 6px solid #2ecc71;
+    padding: 14px;
+    border-radius: 10px;
+}
+
+.health-bad {
+    background: rgba(231,76,60,0.15);
+    border-left: 6px solid #e74c3c;
+    padding: 14px;
+    border-radius: 10px;
+}
+
+.warning-box {
+    background: rgba(243,156,18,0.15);
+    border-left: 6px solid #f39c12;
+    padding: 14px;
+    border-radius: 10px;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 10px 18px;
+}
+
 </style>
 """, unsafe_allow_html=True)
+
+refresh_rate = st.sidebar.slider(
+    "Refresh Interval (ms)",
+    1000,
+    10000,
+    2000,
+    step=500
+)
+
+st_autorefresh(
+    interval=refresh_rate,
+    key="ecu_dashboard_refresh"
+)
 
 
 @st.cache_resource
 def init_platform():
     db = DatabaseManager()
+
     ecu = ECUSimulator()
+
     bus = VirtualCANBus()
+
     tx = CANTransmitter(bus, ecu)
+
     monitor = CANMonitor(bus, db)
+
     dtc_mgr = DTCManager(ecu, db)
+
     collector = TelemetryCollector(ecu, db)
+
     fault_eng = FaultEngine(ecu, tx, db)
+
     uds = UDSHandler(ecu, dtc_mgr)
 
     ecu.start()
@@ -69,6 +164,7 @@ def init_platform():
 
 
 platform = init_platform()
+
 ecu = platform["ecu"]
 collector = platform["collector"]
 dtc_mgr = platform["dtc_mgr"]
@@ -77,381 +173,323 @@ monitor = platform["monitor"]
 uds = platform["uds"]
 db = platform["db"]
 
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Rolls-Royce_Holdings_logo.svg/320px-Rolls-Royce_Holdings_logo.svg.png", width=200)
-st.sidebar.markdown("## ECU Diagnostics Platform")
-st.sidebar.markdown("*SIL Simulation – Rolls-Royce Internship*")
+st.markdown(
+    """
+    <div style='padding:18px;border-radius:18px;background:linear-gradient(90deg,#1e293b,#0f172a);border:1px solid rgba(255,255,255,0.08);margin-bottom:18px;'>
+        <h1 style='margin-bottom:0;'>⚙️ ECU Diagnostics & Validation Platform</h1>
+        <p style='font-size:18px;color:#cbd5e1;'>
+        Real-Time SIL/HIL Embedded Validation Environment • CAN Diagnostics • Fault Injection • UDS/OBD-II
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.title("⚙️ ECU Platform")
+st.sidebar.markdown("### Rolls-Royce Embedded Validation")
+
 st.sidebar.markdown("---")
+st.sidebar.markdown("### ECU Information")
+st.sidebar.write("ECU Type: Powertrain Control Module")
+st.sidebar.write("Protocol: CAN 2.0B")
+st.sidebar.write("Diagnostic Mode: UDS / OBD-II")
+st.sidebar.write("Firmware Version: v2.4.1")
+st.sidebar.write("Bus Speed: 500 kbps")
+
+mode = st.sidebar.selectbox(
+    "Execution Mode",
+    ["SIL Simulation", "HIL Ready"]
+)
+
+st.sidebar.info(f"Current Mode: {mode}")
 
 page = st.sidebar.radio(
     "Navigation",
-    ["Live Telemetry", "CAN Traffic", "Diagnostics & DTCs", "Fault Injection", "Test Runner", "Reports & Logs"],
+    [
+        "System Overview",
+        "Live Telemetry",
+        "CAN Traffic",
+        "Diagnostics & DTCs",
+        "Fault Injection",
+        "Test Runner",
+        "Reports & Logs"
+    ],
 )
 
-auto_refresh = st.sidebar.checkbox("Auto-refresh (2s)", value=True)
-if auto_refresh:
-    time.sleep(0.05)
-    st.rerun() if hasattr(st, "rerun") else st.experimental_rerun()
-
+telemetry = collector.get_latest()
+can_frames = len(monitor.get_log(200))
 active_faults = fault_eng.get_active()
 active_dtcs = dtc_mgr.get_active_dtcs()
-health_ok = len(active_faults) == 0 and len(active_dtcs) == 0
 
-st.sidebar.markdown("---")
-if health_ok:
-    st.sidebar.success("System Health: OK")
-else:
-    st.sidebar.error(f"System Health: {len(active_faults)} fault(s), {len(active_dtcs)} DTC(s)")
+k1, k2, k3, k4 = st.columns(4)
+
+k1.metric("CAN Frames", can_frames)
+k2.metric("Active Faults", len(active_faults))
+k3.metric("Active DTCs", len(active_dtcs))
+k4.metric("System Uptime", f"{int(time.time() % 10000)} s")
 
 
-if page == "Live Telemetry":
+if page == "System Overview":
+
+    st.title("📊 Embedded Validation Overview")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Telemetry Samples", len(db.fetch_telemetry(limit=1000)))
+    col2.metric("Logged DTC Events", len(db.fetch_dtc_history(limit=1000)))
+    col3.metric("Executed Tests", len(db.fetch_test_reports(limit=1000)))
+
+    st.markdown("---")
+
+    overview_cols = st.columns(2)
+
+    with overview_cols[0]:
+        st.markdown(
+            """
+            ### Platform Capabilities
+            - Real-time ECU simulation
+            - CAN diagnostics monitoring
+            - Automated fault injection
+            - UDS/OBD-II diagnostics
+            - SIL/HIL architecture
+            - Automated regression testing
+            - SQLite telemetry logging
+            - Streamlit observability dashboard
+            """
+        )
+
+    with overview_cols[1]:
+        st.markdown(
+            """
+            ### Engineering Domains
+            - Embedded systems
+            - ECU validation
+            - Automotive diagnostics
+            - Functional testing
+            - Powertrain simulation
+            - CAN communication
+            - Reliability engineering
+            """
+        )
+
+
+elif page == "Live Telemetry":
+
     st.title("⚙️ Live ECU Telemetry")
+
     tel = collector.get_latest()
 
     if tel:
+
+        st.subheader("Real-Time ECU Health Overview")
+
+        health_cols = st.columns(3)
+
+        with health_cols[0]:
+            if tel.get("engine_temp",0) > 115:
+                st.markdown('<div class="health-bad">🔥 Engine overheating detected</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="health-good">✅ Thermal system stable</div>', unsafe_allow_html=True)
+
+        with health_cols[1]:
+            if tel.get("battery_voltage",0) < 11.8:
+                st.markdown('<div class="warning-box">⚠ Low battery voltage</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="health-good">✅ Power rail nominal</div>', unsafe_allow_html=True)
+
+        with health_cols[2]:
+            if len(active_dtcs) > 0:
+                st.markdown('<div class="health-bad">⚠ Diagnostic events active</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="health-good">✅ No active diagnostic events</div>', unsafe_allow_html=True)
+
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("RPM", f"{tel.get('rpm', 0):.0f}", delta=None)
-        c2.metric("Engine Temp", f"{tel.get('engine_temp', 0):.1f} °C",
-                  delta="⚠ HIGH" if tel.get("engine_temp", 0) > 115 else None,
-                  delta_color="inverse")
+
+        c1.metric("RPM", f"{tel.get('rpm', 0):.0f}")
+        c2.metric("Engine Temp", f"{tel.get('engine_temp', 0):.1f} °C")
         c3.metric("Fuel Pressure", f"{tel.get('fuel_pressure', 0):.0f} kPa")
-        c4.metric("Battery", f"{tel.get('battery_voltage', 0):.2f} V",
-                  delta="⚠ LOW" if tel.get("battery_voltage", 99) < 11.8 else None,
-                  delta_color="inverse")
+        c4.metric("Battery", f"{tel.get('battery_voltage', 0):.2f} V")
         c5.metric("Throttle", f"{tel.get('throttle_position', 0):.1f} %")
 
-    st.markdown("---")
-    history = collector.get_history(120)
+        history = collector.get_history(60)
 
-    if len(history) > 1:
-        df = pd.DataFrame(history)
-        df["time"] = pd.to_datetime(df["timestamp"], unit="s")
+        if len(history) > 1:
+            df = pd.DataFrame(history)
+            df["time"] = pd.to_datetime(df["timestamp"], unit="s")
 
-        col_left, col_right = st.columns(2)
+            fig = go.Figure()
 
-        with col_left:
-            fig_rpm = go.Figure()
-            fig_rpm.add_trace(go.Scatter(x=df["time"], y=df["rpm"], mode="lines",
-                                         line=dict(color="#3498db", width=2), name="RPM"))
-            fig_rpm.update_layout(title="Engine RPM", height=280, margin=dict(l=0, r=0, t=30, b=0),
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                   font=dict(color="white"))
-            fig_rpm.update_xaxes(showgrid=False)
-            fig_rpm.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.1)")
-            st.plotly_chart(fig_rpm, use_container_width=True)
+            fig.add_trace(go.Scatter(
+                x=df["time"],
+                y=df["rpm"],
+                mode="lines",
+                name="RPM"
+            ))
 
-        with col_right:
-            fig_temp = go.Figure()
-            fig_temp.add_trace(go.Scatter(x=df["time"], y=df["engine_temp"], mode="lines",
-                                           line=dict(color="#e74c3c", width=2), name="Temp °C"))
-            fig_temp.add_hline(y=120, line_dash="dash", line_color="orange", annotation_text="Overheat threshold")
-            fig_temp.update_layout(title="Engine Temperature", height=280, margin=dict(l=0, r=0, t=30, b=0),
-                                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                    font=dict(color="white"))
-            fig_temp.update_xaxes(showgrid=False)
-            fig_temp.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.1)")
-            st.plotly_chart(fig_temp, use_container_width=True)
+            fig.add_trace(go.Scatter(
+                x=df["time"],
+                y=df["engine_temp"],
+                mode="lines",
+                name="Temp"
+            ))
 
-        col_l2, col_r2 = st.columns(2)
+            fig.update_layout(
+                height=500,
+                template="plotly_dark"
+            )
 
-        with col_l2:
-            fig_v = go.Figure()
-            fig_v.add_trace(go.Scatter(x=df["time"], y=df["battery_voltage"], mode="lines",
-                                        line=dict(color="#2ecc71", width=2), name="Voltage V"))
-            fig_v.add_hline(y=11.5, line_dash="dash", line_color="red", annotation_text="Low voltage")
-            fig_v.update_layout(title="Battery Voltage", height=260, margin=dict(l=0, r=0, t=30, b=0),
-                                  paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                  font=dict(color="white"))
-            st.plotly_chart(fig_v, use_container_width=True)
-
-        with col_r2:
-            fig_fp = go.Figure()
-            fig_fp.add_trace(go.Scatter(x=df["time"], y=df["fuel_pressure"], mode="lines",
-                                         line=dict(color="#9b59b6", width=2), name="Pressure kPa"))
-            fig_fp.add_hline(y=250, line_dash="dash", line_color="orange", annotation_text="Low pressure")
-            fig_fp.update_layout(title="Fuel Pressure", height=260, margin=dict(l=0, r=0, t=30, b=0),
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                   font=dict(color="white"))
-            st.plotly_chart(fig_fp, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
 
 
 elif page == "CAN Traffic":
+
     st.title("🔌 CAN Bus Traffic Monitor")
-    frames = monitor.get_log(80)
+
+    frames = monitor.get_log(100)
 
     if frames:
+
         df_can = pd.DataFrame(frames)
-        df_can["timestamp"] = pd.to_datetime(df_can["timestamp"], unit="s").dt.strftime("%H:%M:%S.%f").str[:-3]
-        df_can["error"] = df_can["error"].apply(lambda x: "⚠ ERROR" if x else "OK")
-        df_can = df_can[["timestamp", "arbitration_id", "signal", "value", "unit", "error", "raw"]]
-        df_can.columns = ["Time", "Arb ID", "Signal", "Value", "Unit", "Status", "Raw"]
+
+        df_can["timestamp"] = pd.to_datetime(
+            df_can["timestamp"],
+            unit="s"
+        ).dt.strftime("%H:%M:%S.%f").str[:-3]
 
         st.dataframe(
-            df_can.tail(50).iloc[::-1],
+            df_can.tail(100).iloc[::-1],
             use_container_width=True,
-            height=400,
+            hide_index=True,
+            height=520,
         )
 
-        st.markdown("---")
-        st.subheader("Frame Distribution")
-        sig_counts = df_can["Signal"].value_counts().reset_index()
-        sig_counts.columns = ["Signal", "Count"]
-        fig_pie = px.pie(sig_counts, names="Signal", values="Count", hole=0.4)
-        fig_pie.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
-        st.plotly_chart(fig_pie, use_container_width=True)
-    else:
-        st.info("No CAN frames captured yet. Frames will appear as the ECU runs.")
+        st.subheader("CAN Bus Utilization")
+
+        bus_df = pd.DataFrame({
+            "Signal": df_can["signal"].value_counts().index,
+            "Frames": df_can["signal"].value_counts().values
+        })
+
+        fig_bus = px.bar(
+            bus_df,
+            x="Signal",
+            y="Frames",
+            text="Frames"
+        )
+
+        fig_bus.update_layout(
+            height=350,
+            template="plotly_dark"
+        )
+
+        st.plotly_chart(fig_bus, use_container_width=True)
 
 
 elif page == "Diagnostics & DTCs":
+
     st.title("🔍 Diagnostics – DTCs & UDS")
 
-    col1, col2 = st.columns([2, 1])
+    dtcs = dtc_mgr.get_active_dtcs()
 
-    with col1:
-        st.subheader("Active Diagnostic Trouble Codes")
-        dtcs = dtc_mgr.get_active_dtcs()
+    if dtcs:
+        for dtc in dtcs:
+            st.error(f"{dtc['code']} - {dtc['desc']}")
+    else:
+        st.success("No active DTCs")
 
-        if dtcs:
-            severity_color = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
-            for dtc in dtcs:
-                sev = dtc.get("severity", "LOW")
-                icon = severity_color.get(sev, "⚪")
-                st.markdown(
-                    f'<div class="fault-card">{icon} <strong>{dtc["code"]}</strong> [{sev}] — {dtc["desc"]}</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown('<div class="ok-card">✅ No active DTCs</div>', unsafe_allow_html=True)
+    if st.button("Clear DTCs"):
+        dtc_mgr.clear_dtcs()
 
-        if st.button("🗑 Clear All DTCs", type="secondary"):
-            dtc_mgr.clear_dtcs()
-            st.success("DTCs cleared.")
+    chosen = st.selectbox(
+        "Inject DTC",
+        list(DTC_DEFINITIONS.keys())
+    )
 
-        st.markdown("---")
-        st.subheader("Inject DTC Manually")
-        from diagnostics.dtc_manager import DTC_DEFINITIONS
-        dtc_options = list(DTC_DEFINITIONS.keys())
-        chosen = st.selectbox("Select DTC code", dtc_options)
-        if st.button("Inject DTC"):
-            dtc_mgr.inject_dtc(chosen)
-            st.warning(f"DTC {chosen} injected.")
-
-    with col2:
-        st.subheader("UDS Request")
-        sid_map = {
-            "0x10 – Session Control": 0x10,
-            "0x19 – Read DTCs": 0x19,
-            "0x14 – Clear DTCs": 0x14,
-            "0x22 – Read Data": 0x22,
-            "0x11 – ECU Reset": 0x11,
-        }
-        sid_label = st.selectbox("Service ID", list(sid_map.keys()))
-        sid = sid_map[sid_label]
-
-        params = {}
-        if sid == 0x10:
-            mode = st.selectbox("Session Mode", [1, 2, 3])
-            params["mode"] = mode
-        if sid == 0x22:
-            did_options = {"VIN (0xF190)": 0xF190, "RPM (0x0100)": 0x0100,
-                           "Temp (0x0101)": 0x0101, "Voltage (0x0103)": 0x0103}
-            did_label = st.selectbox("Data ID", list(did_options.keys()))
-            params["did"] = did_options[did_label]
-
-        if st.button("Send UDS Request"):
-            resp = uds.process_request(sid, params)
-            st.json(resp)
-
-        st.markdown("---")
-        st.subheader("OBD-II Query")
-        obd = OBD2Handler(ecu)
-        pid_options = {"RPM (0x0C)": 0x0C, "Engine Temp (0x05)": 0x05, "Throttle (0x11)": 0x11}
-        pid_label = st.selectbox("PID", list(pid_options.keys()))
-        if st.button("Query OBD-II"):
-            result = obd.query(pid_options[pid_label])
-            st.json(result)
+    if st.button("Inject"):
+        dtc_mgr.inject_dtc(chosen)
 
 
 elif page == "Fault Injection":
-    st.title("⚡ Fault Injection Engine")
 
-    col1, col2 = st.columns([1, 1])
+    st.title("⚡ Fault Injection")
 
-    with col1:
-        st.subheader("Available Faults")
-        for name, spec in FAULT_CATALOGUE.items():
-            with st.expander(f"🔧 {name}"):
-                st.write(spec["desc"])
-                c_inj, c_clr = st.columns(2)
-                if c_inj.button(f"Inject", key=f"inj_{name}"):
-                    result = fault_eng.inject(name)
-                    st.warning(result.get("desc", "Injected"))
-                if c_clr.button(f"Clear", key=f"clr_{name}"):
-                    fault_eng.clear(name)
-                    st.success(f"{name} cleared")
+    for name, spec in FAULT_CATALOGUE.items():
 
-        st.markdown("---")
-        if st.button("🔴 Inject ALL Faults", type="primary"):
-            for name in FAULT_CATALOGUE:
+        with st.expander(name):
+
+            st.write(spec["desc"])
+
+            c1, c2 = st.columns(2)
+
+            if c1.button(f"Inject {name}"):
                 fault_eng.inject(name)
-            st.error("All faults injected!")
 
-        if st.button("✅ Clear ALL Faults"):
-            fault_eng.clear_all()
-            ecu.reset()
-            st.success("All faults cleared and ECU reset.")
-
-    with col2:
-        st.subheader("Active Faults")
-        active = fault_eng.get_active()
-        if active:
-            for f in active:
-                st.markdown(
-                    f'<div class="fault-card">🔴 <strong>{f["name"]}</strong> — {f["desc"]}</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown('<div class="ok-card">✅ No active faults</div>', unsafe_allow_html=True)
-
-        st.markdown("---")
-        st.subheader("Current Telemetry Under Fault")
-        tel = collector.get_latest()
-        if tel:
-            gauge_data = [
-                ("RPM", tel.get("rpm", 0), 0, 7000),
-                ("Temp °C", tel.get("engine_temp", 0), 70, 140),
-                ("Fuel kPa", tel.get("fuel_pressure", 0), 0, 600),
-                ("Voltage V", tel.get("battery_voltage", 0), 9, 15),
-            ]
-            for label, val, lo, hi in gauge_data:
-                fig_g = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=val,
-                    title={"text": label},
-                    gauge={
-                        "axis": {"range": [lo, hi]},
-                        "bar": {"color": "#3498db"},
-                        "steps": [
-                            {"range": [lo, lo + (hi - lo) * 0.5], "color": "rgba(46,204,113,0.2)"},
-                            {"range": [lo + (hi - lo) * 0.5, lo + (hi - lo) * 0.75], "color": "rgba(243,156,18,0.2)"},
-                            {"range": [lo + (hi - lo) * 0.75, hi], "color": "rgba(231,76,60,0.2)"},
-                        ],
-                    },
-                ))
-                fig_g.update_layout(height=180, margin=dict(l=10, r=10, t=30, b=0),
-                                     paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
-                st.plotly_chart(fig_g, use_container_width=True)
+            if c2.button(f"Clear {name}"):
+                fault_eng.clear(name)
 
 
 elif page == "Test Runner":
+
     st.title("🧪 Automated Test Execution")
-    st.markdown("Run the full PyTest suite directly from the dashboard.")
 
-    col1, col2 = st.columns([1, 2])
+    if st.button("Run Full Test Suite"):
 
-    with col1:
-        test_module = st.selectbox("Test Module", [
-            "All Tests",
-            "test_ecu",
-            "test_can",
-            "test_diagnostics",
-            "test_faults",
-            "test_database",
-        ])
+        test_dir = os.path.join(os.path.dirname(__file__), "..", "testing")
 
-        verbose = st.checkbox("Verbose output", value=True)
-        run_btn = st.button("▶ Run Tests", type="primary")
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            test_dir,
+            "-v",
+            "--tb=short",
+            "--no-header"
+        ]
 
-    with col2:
-        if run_btn:
-            test_dir = os.path.join(os.path.dirname(__file__), "..", "testing")
-            cmd = [sys.executable, "-m", "pytest"]
-            if test_module != "All Tests":
-                cmd.append(os.path.join(test_dir, f"{test_module}.py"))
-            else:
-                cmd.append(test_dir)
-            if verbose:
-                cmd.append("-v")
-            cmd += ["--tb=short", "--no-header"]
+        with st.spinner("Running tests..."):
 
-            with st.spinner("Running tests..."):
-                result = subprocess.run(cmd, capture_output=True, text=True,
-                                        cwd=os.path.join(os.path.dirname(__file__), ".."))
-
-            output = result.stdout + result.stderr
-            passed = output.count(" PASSED")
-            failed = output.count(" FAILED")
-            errors = output.count(" ERROR")
-
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Passed", passed, delta=None)
-            m2.metric("Failed", failed, delta=None)
-            m3.metric("Errors", errors, delta=None)
-
-            overall = "PASS" if failed == 0 and errors == 0 else "FAIL"
-            if overall == "PASS":
-                st.success("All tests passed!")
-            else:
-                st.error(f"Test run complete: {failed} failed, {errors} errors.")
-
-            st.code(output, language="text")
-
-            db.insert_test_report(
-                test_name=test_module,
-                result=overall,
-                duration=0.0,
-                details=f"passed={passed} failed={failed} errors={errors}",
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=os.path.join(os.path.dirname(__file__), "..")
             )
-        else:
-            st.info("Select a test module and click Run Tests.")
+
+        output = result.stdout + result.stderr
+
+        st.code(output)
 
 
 elif page == "Reports & Logs":
+
     st.title("📋 Reports & Logs")
 
-    tab1, tab2, tab3 = st.tabs(["Telemetry History", "DTC History", "Test Reports"])
+    tab1, tab2, tab3 = st.tabs([
+        "Telemetry",
+        "DTC History",
+        "Tests"
+    ])
 
     with tab1:
-        rows = db.fetch_telemetry(limit=200)
+
+        rows = db.fetch_telemetry(limit=100)
+
         if rows:
-            df = pd.DataFrame(rows)
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s").dt.strftime("%H:%M:%S")
-            st.dataframe(df, use_container_width=True, height=400)
-        else:
-            st.info("No telemetry data yet.")
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
     with tab2:
+
         rows = db.fetch_dtc_history(limit=100)
+
         if rows:
-            df = pd.DataFrame(rows)
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s").dt.strftime("%Y-%m-%d %H:%M:%S")
-            sev_colors = {"CRITICAL": "background-color: #c0392b", "HIGH": "background-color: #e67e22",
-                          "MEDIUM": "background-color: #f1c40f", "LOW": "background-color: #27ae60"}
-            st.dataframe(df, use_container_width=True, height=400)
-        else:
-            st.info("No DTC history yet.")
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
     with tab3:
-        rows = db.fetch_test_reports(limit=50)
-        if rows:
-            df = pd.DataFrame(rows)
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s").dt.strftime("%Y-%m-%d %H:%M:%S")
-            st.dataframe(df, use_container_width=True, height=400)
-        else:
-            st.info("No test reports yet. Run tests from the Test Runner page.")
 
-    st.markdown("---")
-    st.subheader("Log Files")
-    log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
-    if os.path.isdir(log_dir):
-        log_files = [f for f in os.listdir(log_dir) if f.endswith(".log")]
-        if log_files:
-            chosen_log = st.selectbox("Select log file", log_files)
-            log_path = os.path.join(log_dir, chosen_log)
-            with open(log_path, "r") as fh:
-                lines = fh.readlines()
-            st.text_area("Log contents (last 200 lines)", "".join(lines[-200:]), height=350)
-        else:
-            st.info("No log files found.")
-    else:
-        st.info("Logs directory not found.")
+        rows = db.fetch_test_reports(limit=100)
+
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+```
