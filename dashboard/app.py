@@ -105,10 +105,14 @@ refresh_rate = st.sidebar.slider(
     step=500
 )
 
-st_autorefresh(
-    interval=refresh_rate,
-    key="ecu_refresh"
-)
+if "running_validation" not in st.session_state:
+    st.session_state.running_validation = False
+
+if not st.session_state.running_validation:
+    st_autorefresh(
+        interval=refresh_rate,
+        key="ecu_refresh"
+    )
 
 
 @st.cache_resource
@@ -473,58 +477,6 @@ elif page == "Diagnostics & DTCs":
         st.json(uds_result)
 
 
-elif page == "Fault Injection":
-
-    st.title("⚡ Fault Injection Console")
-
-    for name, spec in FAULT_CATALOGUE.items():
-
-        with st.expander(name):
-
-            st.write(spec["desc"])
-
-            c1, c2 = st.columns(2)
-
-            if c1.button(f"Inject {name}"):
-                fault_eng.inject(name)
-                st.error(f"{name} injected")
-
-            if c2.button(f"Clear {name}"):
-                fault_eng.clear(name)
-                st.success(f"{name} cleared")
-
-
-elif page == "Validation Analytics":
-
-    st.title("📈 Validation Analytics")
-
-    analytics_df = pd.DataFrame({
-        "Suite": [
-            "ECU Validation",
-            "CAN Diagnostics",
-            "Fault Injection",
-            "Database Validation",
-            "Regression Suite"
-        ],
-        "Pass Rate": [98, 95, 97, 100, 96],
-        "Execution Time": [4.2, 3.8, 5.1, 1.2, 8.4]
-    })
-
-    st.dataframe(analytics_df, use_container_width=True, hide_index=True)
-
-    fig = px.line(
-        analytics_df,
-        x="Suite",
-        y="Pass Rate",
-        markers=True,
-        title="Validation Pass Rate"
-    )
-
-    fig.update_layout(template="plotly_dark", height=450)
-
-    st.plotly_chart(fig, use_container_width=True)
-
-
 elif page == "Test Runner":
 
     st.title("🧪 Automated Validation Execution")
@@ -546,6 +498,52 @@ elif page == "Test Runner":
     t2.metric("Validation Suites", "56")
     t3.metric("Previous Run", "PASS")
 
+    st.markdown("---")
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## System Alerts")
+
+    alerts = [
+        "CAN latency nominal",
+        "ECU heartbeat stable",
+        "Diagnostics synchronized",
+        "No packet loss detected"
+    ]
+
+    for a in alerts:
+        st.sidebar.success(a)
+
+    throughput = pd.DataFrame({
+        "Time": list(range(20)),
+        "Frames": [random.randint(420, 520) for _ in range(20)]
+    })
+
+    fig_tp = px.line(
+        throughput,
+        x="Time",
+        y="Frames",
+        title="CAN Throughput (frames/sec)"
+    )
+
+    fig_tp.update_layout(
+        template="plotly_dark",
+        height=300
+    )
+
+    st.plotly_chart(fig_tp, use_container_width=True)
+
+    states = [
+        "BOOT",
+        "INIT",
+        "READY",
+        "RUNNING",
+        "DIAGNOSTIC"
+    ]
+
+    current_state = random.choice(states)
+
+    st.info(f"Current ECU State: {current_state}")
+
     selected_suite = st.selectbox(
         "Validation Suite",
         [
@@ -558,6 +556,8 @@ elif page == "Test Runner":
     )
 
     if st.button("▶ Execute Validation Suite", use_container_width=True):
+
+        st.session_state.running_validation = True
 
         progress = st.progress(0)
 
@@ -574,11 +574,20 @@ elif page == "Test Runner":
         ]
 
         for i, step in enumerate(steps):
+
             status.info(step)
+
             progress.progress((i + 1) / len(steps))
-            time.sleep(0.7)
+
+            time.sleep(1)
 
         st.success("Validation completed successfully.")
+
+        r1, r2, r3 = st.columns(3)
+
+        r1.metric("Passed", 56)
+        r2.metric("Failed", 0)
+        r3.metric("Coverage", "94%")
 
         results_df = pd.DataFrame({
             "Module": [
@@ -595,10 +604,24 @@ elif page == "Test Runner":
                 "PASS",
                 "PASS"
             ],
-            "Execution Time (s)": [1.2, 0.9, 1.5, 1.1, 0.6]
+            "Execution Time (s)": [
+                1.2,
+                0.9,
+                1.5,
+                1.1,
+                0.6
+            ]
         })
 
-        st.dataframe(results_df, use_container_width=True, hide_index=True)
+        st.markdown("---")
+
+        st.subheader("Validation Results")
+
+        st.dataframe(
+            results_df,
+            use_container_width=True,
+            hide_index=True
+        )
 
         fig_runtime = px.bar(
             results_df,
@@ -608,10 +631,31 @@ elif page == "Test Runner":
             title="Validation Runtime Analytics"
         )
 
-        fig_runtime.update_layout(template="plotly_dark")
+        fig_runtime.update_layout(
+            template="plotly_dark",
+            height=450
+        )
 
-        st.plotly_chart(fig_runtime, use_container_width=True)
+        st.plotly_chart(
+            fig_runtime,
+            use_container_width=True
+        )
 
+        st.markdown("---")
+
+        st.subheader("Execution Summary")
+
+        st.success("""
+        ECU validation completed successfully.
+
+        - CAN communication stable
+        - Telemetry verification passed
+        - Diagnostic validation passed
+        - Fault injection successful
+        - Database integrity verified
+        """)
+
+        st.session_state.running_validation = False
 
 elif page == "Reports & Logs":
 
