@@ -22,12 +22,12 @@ class CANFrame:
 
 class VirtualCANBus:
     def __init__(self):
-        self._tx_queue = queue.Queue(maxsize=256)
-        self._rx_queue = queue.Queue(maxsize=256)
+        self._tx_queue = queue.Queue(maxsize=5000)
+        self._rx_queue = queue.Queue(maxsize=5000)
         self._running = False
         self._thread = None
         self._traffic_log = []
-        self._max_log = 200
+        self._max_log = 1000
         self._lock = threading.Lock()
         self._subscribers = []
         logger.info("VirtualCANBus initialised.")
@@ -50,21 +50,25 @@ class VirtualCANBus:
             try:
                 frame = self._tx_queue.get(timeout=0.1)
                 self._rx_queue.put(frame)
+
                 with self._lock:
                     self._traffic_log.append(frame)
+
                     if len(self._traffic_log) > self._max_log:
                         self._traffic_log.pop(0)
+
                 for cb in self._subscribers:
                     try:
                         cb(frame)
                     except Exception as exc:
                         logger.error(f"CAN subscriber error: {exc}")
+
             except queue.Empty:
                 continue
 
     def send(self, frame: CANFrame):
         try:
-            self._tx_queue.put_nowait(frame)
+            self._tx_queue.put(frame, timeout=0.1)
         except queue.Full:
             logger.warning("CAN TX queue full, dropping frame.")
 
@@ -133,29 +137,59 @@ class CANTransmitter:
     def start(self):
         if self._running:
             return
+
         self._running = True
-        self._thread = threading.Thread(target=self._transmit_loop, daemon=True)
+
+        self._thread = threading.Thread(
+            target=self._transmit_loop,
+            daemon=True
+        )
+
         self._thread.start()
+
         logger.info("CAN transmitter thread started.")
 
     def stop(self):
         self._running = False
+
         if self._thread:
             self._thread.join(timeout=2)
 
     def _transmit_loop(self):
         while self._running:
             tel = self._ecu.get_telemetry()
+
             frames = [
-                CANFrame(CAN_ARBITRATION_IDS["rpm"], VirtualCANBus.encode_rpm(tel["rpm"])),
-                CANFrame(CAN_ARBITRATION_IDS["engine_temp"], VirtualCANBus.encode_temp(tel["engine_temp"])),
-                CANFrame(CAN_ARBITRATION_IDS["fuel_pressure"], VirtualCANBus.encode_pressure(tel["fuel_pressure"])),
-                CANFrame(CAN_ARBITRATION_IDS["battery_voltage"], VirtualCANBus.encode_voltage(tel["battery_voltage"])),
-                CANFrame(CAN_ARBITRATION_IDS["throttle_position"], VirtualCANBus.encode_throttle(tel["throttle_position"])),
+                CANFrame(
+                    CAN_ARBITRATION_IDS["rpm"],
+                    VirtualCANBus.encode_rpm(tel["rpm"])
+                ),
+
+                CANFrame(
+                    CAN_ARBITRATION_IDS["engine_temp"],
+                    VirtualCANBus.encode_temp(tel["engine_temp"])
+                ),
+
+                CANFrame(
+                    CAN_ARBITRATION_IDS["fuel_pressure"],
+                    VirtualCANBus.encode_pressure(tel["fuel_pressure"])
+                ),
+
+                CANFrame(
+                    CAN_ARBITRATION_IDS["battery_voltage"],
+                    VirtualCANBus.encode_voltage(tel["battery_voltage"])
+                ),
+
+                CANFrame(
+                    CAN_ARBITRATION_IDS["throttle_position"],
+                    VirtualCANBus.encode_throttle(tel["throttle_position"])
+                ),
             ]
+
             for frame in frames:
                 self._bus.send(frame)
-            time.sleep(0.1)
+
+            time.sleep(0.25)
 
     def send_fault_frame(self, fault_code: int):
         frame = CANFrame(
@@ -165,16 +199,20 @@ class CANTransmitter:
         )
 
         self._bus.send(frame)
+
         time.sleep(0.05)
+
         logger.warning(f"Fault CAN frame sent: 0x{fault_code:04X}")
 
     def send_invalid_frame(self):
-         frame = CANFrame(
-        0x7FF,
-        b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
-        is_error=True
-    )
-    self._bus.send(frame)
-    time.sleep(0.05)
-    logger.warning("Invalid CAN frame injected.")
-        
+        frame = CANFrame(
+            0x7FF,
+            b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
+            is_error=True
+        )
+
+        self._bus.send(frame)
+
+        time.sleep(0.05)
+
+        logger.warning("Invalid CAN frame injected.")
