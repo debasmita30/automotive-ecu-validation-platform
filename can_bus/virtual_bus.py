@@ -169,6 +169,12 @@ class CANTransmitter:
         logger.warning(f"Fault CAN frame sent: 0x{fault_code:04X}")
 
     def send_invalid_frame(self):
-        frame = CANFrame(0x7FF, b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", is_error=True)
-        self._bus.send(frame)
-        logger.warning("Invalid CAN frame injected.")
+         frame = CANFrame(
+        0x7FF,
+        b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
+        is_error=True
+    )
+    self._bus.send(frame)
+    time.sleep(0.05)
+    logger.warning("Invalid CAN frame injected.")
+        
