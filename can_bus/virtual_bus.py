@@ -163,7 +163,9 @@ class CANTransmitter:
             struct.pack(">I", fault_code),
             is_error=True,
         )
+
         self._bus.send(frame)
+        time.sleep(0.05)
         logger.warning(f"Fault CAN frame sent: 0x{fault_code:04X}")
 
     def send_invalid_frame(self):
